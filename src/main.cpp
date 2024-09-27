@@ -1,4 +1,7 @@
 #include <print>
+#include <algorithm>
+#include <concepts>
+#include <map>
 
 import autobnf;
 
@@ -19,6 +22,17 @@ int main()
                      |"num"_sym
                      |"name"_sym
     );
+
+    autobnf::elide_left_recursion(g);
+
+    auto order = std::map<autobnf::symbol, std::size_t>{};
+    for (auto&& s : {"Goal"_sym, "Expr"_sym, "Term"_sym, "Factor"_sym}) {
+        order.emplace(s, order.size());
+        order.emplace(autobnf::default_terminal_symbol_transformer(s), order.size());
+    }
+    std::ranges::sort(g, {}, [&order](auto&& x) {
+        return order.at(x.first);
+    });
 
     std::println("{}", g);
 }

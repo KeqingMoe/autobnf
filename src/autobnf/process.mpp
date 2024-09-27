@@ -1,0 +1,58 @@
+module;
+
+#include <algorithm>
+#include <concepts>
+#include <map>
+#include <print>
+#include <vector>
+
+
+export module autobnf:process;
+import :bnf;
+
+export namespace autobnf
+{
+    template <typename Callable>
+    concept TerminalSymbolTransformer = requires(Callable f, symbol s) {
+        { f(s) } -> std::convertible_to<symbol>;
+    };
+
+    constexpr auto default_terminal_symbol_transformer = [](auto sym) static {
+        sym += '_';
+        return sym;
+    };
+    auto elide_left_recursion(production_list& list, TerminalSymbolTransformer auto&& transformer) -> void
+    {
+        std::map<symbol, symbol> transformation;
+        for (auto&& [lhs, rhs] : list) {
+            if (rhs.empty()) continue;
+            if (lhs == rhs.front()) {
+                auto it = transformation.lower_bound(lhs);
+                if (it == transformation.end() || it->first == lhs) {
+                    transformation.emplace_hint(it, lhs, transformer(lhs));
+                }
+            }
+        }
+        for (auto it = list.begin(); it != list.end(); ++it) {
+            auto&& [lhs, rhs] = *it;
+            if (rhs.empty()) continue;
+            if (auto new_lhs_it = transformation.find(lhs); new_lhs_it != transformation.end()) {
+                auto&& new_lhs = new_lhs_it->second;
+                if (lhs == rhs.front()) {
+                    lhs = new_lhs;
+                    std::shift_left(rhs.begin(), rhs.end(), 1);
+                    rhs.back() = new_lhs;
+                } else {
+                    rhs.push_back(new_lhs);
+                }
+            }
+        }
+        for (auto&& [origin, transformed] : transformation) {
+            list.emplace_back(transformed, autobnf::symbol{});
+        }
+    }
+    auto elide_left_recursion(production_list& list) -> void
+    {
+        elide_left_recursion(list, default_terminal_symbol_transformer);
+    }
+};
