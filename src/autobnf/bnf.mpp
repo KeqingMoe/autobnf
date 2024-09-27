@@ -64,12 +64,11 @@ export namespace autobnf
         production(std::pair<symbol, production_rhs> rule) : pair{std::move(rule)} {}
     };
 
-    struct production_list : std::vector<std::pair<symbol, production_rhs>>
+    struct production_list : std::vector<production>
     {
         using vector::vector;
         production_list(production rule) : vector{rule} {}
         production_list(std::pair<symbol, production_rhs> rule) : vector{rule} {}
-        production_list(std::vector<std::pair<symbol, production_rhs>> s) : vector{s} {}
     };
 
     struct production_lhs : symbol
@@ -90,7 +89,7 @@ export namespace autobnf
     template <typename T>
     concept ProductionListLike = std::convertible_to<T, production_list>;
 
-    auto operator,(std::vector<std::pair<symbol, production_rhs>> lhs, std::vector<std::pair<symbol, production_rhs>> rhs) -> production_list
+    auto operator,(ProductionListLike auto lhs, ProductionListLike auto rhs) -> production_list
     {
         auto lhs_res = production_list{std::move(lhs)};
         lhs_res.append_range(std::move(rhs));
