@@ -1,0 +1,3 @@
+export module autobnf;
+
+export import :bnf;
