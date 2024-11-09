@@ -35,10 +35,10 @@ auto g=(
 autobnf::elide_left_recursion(g);
 ```
 
-这会消除文法中的所有直接左递归（消除间接左递归的功能正在开发中），并产生一些新的非终结符，例如从 `Expr` 产生出 `Expr_` 。产生新非终结符的规则默认是：
+这会消除文法中的所有左递归（包括直接左递归和间接左递归），并产生一些新的非终结符，例如从 `Expr` 产生出 `Expr_` 。产生新非终结符的规则默认是：
 
 ```cpp
-constexpr auto default_terminal_symbol_transformer = [](auto sym) static {
+constexpr auto default_nonterminal_symbol_transformer = [](auto sym) static {
     sym += '_';
     return sym;
 };
@@ -48,7 +48,7 @@ constexpr auto default_terminal_symbol_transformer = [](auto sym) static {
 
 ```cpp
 template <typename Callable>
-concept TerminalSymbolTransformer = requires(Callable f, symbol s) {
+concept NonterminalSymbolTransformer = requires(Callable f, symbol s) {
     { f(s) } -> std::convertible_to<symbol>;
 };
 ```
@@ -62,7 +62,9 @@ autobnf::elide_left_recursion(g, [](auto sym) static {
 });
 ```
 
-### 提取左因子以消除回溯
+目前，它暂时不会检查生成的新非终结符是否重复。给定非终结符集合 NT 和非终结符转换器 T，对 ∀s∈NT，若 T(s)∈NT ，则行为未定义。
+
+### 提取左因子以
 
 开发中。
 
@@ -78,7 +80,7 @@ autobnf::elide_left_recursion(g, [](auto sym) static {
 
 使用 `xmake` 与 C++ Modules 的构建方案。
 
-先切换至 clang 工具链，确保您的 clang 足够新（我使用了 llvm-mingw 19.1.0）。
+先切换至 clang 工具链，确保您的 clang 足够新（我使用了 clang 19.1.3）。
 
 ```shell
 xmake f --toolchain=clang
@@ -98,10 +100,10 @@ xmake run
 
 若您在构建时，出现类似这样的错误，请您重启 clangd 的语言服务器：
 
-```
+```plaintext
 error: error: unable to open output file 'build\.gens\autobnf\windows\x64\release\rules\bmi\cache\modules\4c325ac5\autobnf-bnf.pcm': 'Permission denied'
 1 error generated.
   > in src\autobnf\bnf.mpp
 ```
 
-因为 xmake 的 bug 很多，所以如果遇到任何构建失败的问题（尤其是与 C++ Modules 相关的），您可以试着清除构建产物、缓存，甚至是清除该项目下任何 xmake 生成的文件。
+因为 xmake 存在一些 bug，所以如果遇到任何构建失败的问题（尤其是与 C++ Modules 相关的），您可以先试着清除构建产物、缓存，甚至是清除该项目下任何 xmake 生成的文件。

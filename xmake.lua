@@ -1,9 +1,14 @@
 add_rules("mode.debug", "mode.release")
-set_languages("c++latest")
+add_rules("plugin.compile_commands.autoupdate", { outputdir = "./.vscode" })
+set_languages("c++26")
+
+set_plat("mingw")
+set_toolchains("clang")
+set_runtimes("c++_shared")
 
 target("autobnf")
     set_kind("binary")
-    add_files("src/*.cpp","src/autobnf/*.mpp")
+    add_files("src/*.cpp","src/autobnf/*.cppm")
 
 --
 -- If you want to known more usage about xmake, please see https://xmake.io
