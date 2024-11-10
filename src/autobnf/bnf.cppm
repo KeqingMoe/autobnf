@@ -1,6 +1,7 @@
 export module autobnf:bnf;
 
 import std;
+import :base;
 
 export namespace autobnf
 {
@@ -8,12 +9,14 @@ export namespace autobnf
     {
         using std::string::string;
 
-        auto operator()(this auto self, auto rhs)
+        auto is_null() const
         {
-            return std::vector{std::make_pair(self, std::move(rhs))};
+            return empty();
         }
-    };
 
+        static const symbol null;
+    };
+    const symbol symbol::null{};
 
     struct production_rhs : std::vector<symbol>
     {
@@ -33,7 +36,6 @@ export namespace autobnf
         return lhs_res;
     }
 
-
     struct production_rhs_list : std::vector<production_rhs>
     {
         using vector::vector;
@@ -51,11 +53,17 @@ export namespace autobnf
         return lhs_res;
     }
 
-
     struct production : std::pair<symbol, production_rhs>
     {
+        using base = std::pair<symbol, production_rhs>;
+
         using pair::pair;
         production(std::pair<symbol, production_rhs> rule) : pair{std::move(rule)} {}
+
+        auto to_pair() const -> const base&
+        {
+            return *this;
+        }
     };
 
     struct production_list : std::list<production>
@@ -78,7 +86,6 @@ export namespace autobnf
             return rules;
         }
     };
-
 
     template <typename T>
     concept ProductionListLike = std::convertible_to<T, production_list>;
@@ -107,16 +114,6 @@ export namespace autobnf
 template <>
 struct std::formatter<autobnf::symbol> : std::formatter<std::string_view>
 {
-    // template <typename ParseContext>
-    // constexpr auto parse(ParseContext& ctx) -> ParseContext::iterator
-    // {
-    //     auto first = ctx.begin();
-
-    //     if (first != ctx.end() && *first != '}') throw std::format_error("不能为 `autobnf::symbol` 指定格式参数。");
-
-    //     return first;
-    // }
-
     template <typename Context>
     auto format(this const formatter& self, autobnf::symbol s, Context& ctx) -> Context::iterator
     {
@@ -143,10 +140,73 @@ struct std::formatter<autobnf::production_rhs> : std::formatter<std::string_view
 template <>
 struct std::formatter<autobnf::production> : std::formatter<std::string_view>
 {
-    template <typename Context>
-    auto format(this const formatter& self, autobnf::production rule, Context& ctx) -> Context::iterator
+    bool fold = false;
+    bool use_arg = false;
+    size_t arg_id = 0;
+
+    template <class ParseContext>
+    constexpr auto parse(ParseContext& ctx) -> ParseContext::iterator
     {
-        return self.formatter<std::string_view>::format(std::format("{} = {}", rule.first, rule.second), ctx);
+        auto it = ctx.begin();
+        auto is_digit = [](unsigned char uc) static {
+            return uc >= '0' && uc <= '9';
+        };
+        auto read_uint = [&is_digit, &it] {
+            auto result = 0;
+            for (char ch{}; is_digit(ch = *it); ++it) {
+                auto digit = ch - '0';
+                result = result * 10 + digit;
+            }
+            return result;
+        };
+        if (it == ctx.end()) return it;
+        if (*it == 'y') ++it;
+        else if (*it == 'n') {
+            fold = true;
+            ++it;
+        } else if (*it == '{') {
+            use_arg = true;
+            ++it;
+            if (*it == '}') arg_id = ctx.next_arg_id();
+            else if (is_digit(*it)) ctx.check_arg_id(arg_id = read_uint());
+            else throw std::format_error("autobnf::production 格式参数中存在无效的嵌套替换域。");
+            ++it;
+        }
+        if (it != ctx.end()) {
+            if (*it == ':') {
+                ++it;
+                ctx.advance_to(it);
+                it = formatter<std::string_view>::parse(ctx);
+            }
+            if (*it != '}') throw std::format_error("无效的 autobnf::production 格式参数。");
+        }
+        return it;
+    }
+    template <typename Context>
+    constexpr auto format(this const formatter& self, autobnf::production rule, Context& ctx) -> Context::iterator
+    {
+        auto fold = self.fold;
+        if (self.use_arg) {
+            auto arg = ctx.arg(self.arg_id);
+            if (!arg) {
+                throw format_error(std::format("需要第 {} 参数。", self.arg_id));
+            }
+            fold = std::visit_format_arg(
+                [](auto x) constexpr static -> bool {
+                    constexpr auto is_bool = std::same_as<decltype(x), bool>;
+                    if constexpr (is_bool) {
+                        return x;
+                    } else {
+                        throw format_error("为 autobnf::production 格式参数中的的嵌套替换域提供的参数必须是 bool。");
+                    }
+                },
+                arg
+            );
+        }
+        auto indent = std::formatted_size("{}", rule.first);
+        return self.formatter<std::string_view>::format(
+            std::format("{:>{}} {} {}", fold ? "" : std::format("{}", rule.first), indent, fold ? '|' : '=', rule.second), ctx
+        );
     }
 };
 
@@ -176,7 +236,7 @@ struct std::formatter<autobnf::production_list> : std::formatter<std::string_vie
             if (it != list.begin()) {
                 std::format_to(back_inserter(buffer), "\n");
             }
-            std::format_to(back_inserter(buffer), "{:>{}s}{}", eq_last ? sp : lhs_fmt, lhs_fmt.size(), it->second);
+            std::format_to(back_inserter(buffer), "{:{}}", *it, eq_last);
         }
 
         return self.formatter<std::string_view>::format(buffer, ctx);

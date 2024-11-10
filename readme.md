@@ -11,7 +11,7 @@
 修改其中的这一部分：
 
 ```cpp
-auto g=(
+auto g = (
     "Goal"_rule="Expr"_sym,
     "Expr"_rule="Expr"_sym+"+"_sym+"Term"_sym
                |"Expr"_sym+"-"_sym+"Term"_sym
@@ -64,13 +64,68 @@ autobnf::elide_left_recursion(g, [](auto sym) static {
 
 目前，它暂时不会检查生成的新非终结符是否重复。给定非终结符集合 NT 和非终结符转换器 T，对 ∀s∈NT，若 T(s)∈NT ，则行为未定义。
 
-### 提取左因子以
+### 提取左因子
 
 开发中。
 
 ### 生成 `FIRST` `FOLLOW` `SELECT` 集合
 
-开发中。
+生成这三个集合前，请先确保已经消除左递归，否则您会得到没有意义的 `FOLLOW` 和 `SELECT` 集合：
+
+```cpp
+auto g1 = autobnf::elide_left_recursion(std::move(g0));
+```
+
+使用 `autobnf::first_set` 生成 `FIRST` 集合，通过 `first[sym]` 获得一个符号的 `FIRST` 集合，通过 `first[range-of-symbols]` 获得一个符号的范围（容器或视图等）的 `FIRST` 集合：
+
+```cpp
+auto first = autobnf::first_set{g1};
+for (auto&& sym : syms) {
+    std::println("FIRST({}) = {::}", sym, first[sym]);
+}
+```
+
+使用 `autobnf::follow_set` 生成 `FOLLOW` 集合，通过 `follow[sym]` 获得一个非终结符的 `FOLLOW` 集合：
+
+```cpp
+auto follow = autobnf::follow_set{g1, first};
+for (auto&& sym : ntsyms) {
+    std::println("FOLLOW({}) = {::}", sym, follow[sym]);
+}
+```
+
+使用 `autobnf::select` 生成 `FOLLOW` 集合，通过 `select[p]` 获得一条 **产生式** 的 `SELECT` 集合：
+
+```cpp
+auto estimate_width = [](auto&& x) {
+    return std::formatted_size("{}", x);
+};
+auto width = std::ranges::max(g1 | std::views::transform(estimate_width));
+auto select = autobnf::select_set{g1, first, follow};
+for (auto last = autobnf::symbol::null; auto&& p : g1) {
+    std::println("{:{}:{}} => SELECT(~) = {::}", p, last == p.first, width, select[p]);
+    last = p.first;
+}
+```
+
+按上述流程操作后，可能会得到如下的输出：
+
+```js
+`Expr` = `Term` `Expr_`         => SELECT(~) = {`(`, `name`, `num`}
+`Expr_` = `+` `Term` `Expr_`    => SELECT(~) = {`+`}
+        | `-` `Term` `Expr_`    => SELECT(~) = {`-`}
+        | null                  => SELECT(~) = {null, `)`}
+`Factor` = `(` `Expr` `)`       => SELECT(~) = {`(`}
+         | `num`                => SELECT(~) = {`num`}
+         | `name`               => SELECT(~) = {`name`}
+`Goal` = `Term` `Expr_`         => SELECT(~) = {`(`, `name`, `num`}
+`Term` = `(` `Expr` `)` `Term_` => SELECT(~) = {`(`}
+       | `num` `Term_`          => SELECT(~) = {`num`}
+       | `name` `Term_`         => SELECT(~) = {`name`}
+`Term_` = `*` `Factor` `Term_`  => SELECT(~) = {`*`}
+        | `/` `Factor` `Term_`  => SELECT(~) = {`/`}
+        | null                  => SELECT(~) = {null, `)`, `+`, `-`}
+```
 
 ### 自动生成递归下降语法分析器
 
@@ -80,10 +135,15 @@ autobnf::elide_left_recursion(g, [](auto sym) static {
 
 使用 `xmake` 与 C++ Modules 的构建方案。
 
-先切换至 clang 工具链，确保您的 clang 足够新（我使用了 clang 19.1.3）。
+确保您配置了合适的 clang 环境。如下是我的设备上的 clang:
 
-```shell
-xmake f --toolchain=clang
+```plaintext
+llvm-mingw-20241030-ucrt-x86_64
+
+> clang++ -v
+clang version 19.1.3 (https://github.com/llvm/llvm-project.git ab51eccf88f5321e7c60591c5546b254b6afab99)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
 ```
 
 构建：
@@ -107,3 +167,8 @@ error: error: unable to open output file 'build\.gens\autobnf\windows\x64\releas
 ```
 
 因为 xmake 存在一些 bug，所以如果遇到任何构建失败的问题（尤其是与 C++ Modules 相关的），您可以先试着清除构建产物、缓存，甚至是清除该项目下任何 xmake 生成的文件。
+
+```shell
+xmake f -c
+xmake
+```
